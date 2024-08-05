@@ -1,86 +1,23 @@
-import styled from '@emotion/styled';
-import { useMemo, useState, useEffect, useRef } from 'react';
-import { Stage, Container, Graphics } from '@pixi/react';
+import React, { useMemo, useState, useEffect } from 'react';
+import { Stage, Container } from '@pixi/react';
 import { BlurFilter } from 'pixi.js';
+import FullScreenStage from './FullScreenStage';
+import EditorPanel from './EditorPanel';
+import SphereGraphics from './SphereGraphics';
+import ConnectionGraphics from './ConnectionGraphics';
+import useWindowDimensions from '../utils/useWindowDimensions';
+import { initializeSpheres } from '../utils/sphereUtils';
+import { initializeConnections } from '../utils/connectionUtils';
 
-const FullScreenStage = styled.div`
-  width: 100vw;
-  height: 100vh;
-  position: fixed;
-  top: 0;
-  left: 0;
-  background-color: white;
-`;
-
-const TestComponent = ({ numSpheres = 5, maxNeighbors = 5 }) => {
+const Simulation = ({ numSpheres = 50, maxNeighbors = 3 }) => {
   const blurFilter = useMemo(() => new BlurFilter(4), []);
-
-  const [dimensions, setDimensions] = useState({
-    width: window.innerWidth,
-    height: window.innerHeight,
-  });
-
+  const dimensions = useWindowDimensions(window);
   const [draggedSphere, setDraggedSphere] = useState(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [selectedElement, setSelectedElement] = useState(null);
 
-  useEffect(() => {
-    const handleResize = () => {
-      setDimensions({
-        width: window.innerWidth,
-        height: window.innerHeight,
-      });
-    };
-
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  const [spheres, setSpheres] = useState(() => {
-    const initialSpheres = {};
-    for (let i = 0; i < numSpheres; i++) {
-      const radius = Math.random() * 20 + 10;
-      const key = `sphere_${i}`;
-      initialSpheres[key] = {
-        x: Math.random() * (window.innerWidth - 2 * radius) + radius,
-        y: Math.random() * (window.innerHeight - 2 * radius) + radius,
-        vx: (Math.random() - 0.5) * 2,
-        vy: (Math.random() - 0.5) * 2,
-        radius: radius,
-        mass: radius / 10, // Mass is proportional to the radius
-      };
-    }
-    return initialSpheres;
-  });
-
-  const [connections, setConnections] = useState(() => {
-    const calculateDistance = (a, b) => {
-      return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
-    };
-
-    const initialConnections = {};
-    const sphereKeys = Object.keys(spheres);
-
-    sphereKeys.forEach((key, i) => {
-      const sphere = spheres[key];
-      const distances = sphereKeys
-        .filter((_, j) => i !== j)
-        .map((otherKey) => ({
-          key: otherKey,
-          distance: calculateDistance(sphere, spheres[otherKey]),
-        }))
-        .sort((a, b) => a.distance - b.distance)
-        .slice(0, Math.floor(Math.random() * maxNeighbors) + 1);
-
-      initialConnections[key] = distances.map((d) => ({
-        key: d.key,
-        length: d.distance,
-        springConstant: Math.random() * 0.01 + 0.01, // random spring constant between 0.01 and 0.06
-        dampingConstant: Math.random() * 0.001 + 0.00001, // random damping constant between 0.01 and 0.03
-      }));
-    });
-
-    return initialConnections;
-  });
+  const [spheres, setSpheres] = useState(() => initializeSpheres(numSpheres, dimensions.width, dimensions.height));
+  const [connections, setConnections] = useState(() => initializeConnections(spheres, maxNeighbors));
 
   useEffect(() => {
     const update = () => {
@@ -188,11 +125,56 @@ const TestComponent = ({ numSpheres = 5, maxNeighbors = 5 }) => {
     setDraggedSphere(null);
   };
 
+  const handleElementClick = (key, type, element, connectionKey = null) => {
+    setSelectedElement({ key, type, ...element });
+  };
+
+  const updateSphere = (key, updatedValues) => {
+    setSpheres((prevSpheres) => ({
+      ...prevSpheres,
+      [key]: {
+        ...prevSpheres[key],
+        ...updatedValues,
+        radius: updatedValues.mass * 10, // Update radius based on mass
+      },
+    }));
+  };
+
+  const updateConnection = (sphereKey, connectionKey, updatedValues) => {
+    setConnections((prevConnections) => ({
+      ...prevConnections,
+      [sphereKey]: prevConnections[sphereKey].map((connection) =>
+        connection.connectionKey === connectionKey
+          ? { ...connection, ...updatedValues }
+          : connection
+      ),
+    }));
+  };
+
+  const closeEditor = () => {
+    setSelectedElement(null);
+  };
+
+  const handleStageClick = (event) => {
+    const clickX = event.clientX;
+    const clickY = event.clientY;
+    for (const key in spheres) {
+      const sphere = spheres[key];
+      const dx = clickX - sphere.x;
+      const dy = clickY - sphere.y;
+      if (dx * dx + dy * dy <= sphere.radius * sphere.radius) {
+        handleElementClick(key, 'sphere', sphere);
+        return;
+      }
+    }
+  };
+
   return (
     <FullScreenStage
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
+      onPointerDown={handleStageClick}
     >
       <Stage width={dimensions.width} height={dimensions.height} options={{ backgroundColor: 0xffffff }}>
         <Container>
@@ -201,14 +183,12 @@ const TestComponent = ({ numSpheres = 5, maxNeighbors = 5 }) => {
             return connections[key].map((connection) => {
               const neighbor = spheres[connection.key];
               return (
-                <Graphics
-                  key={`${key}_${connection.key}`}
-                  draw={(g) => {
-                    g.clear();
-                    g.lineStyle(1, 0x0000ff, 0.5);
-                    g.moveTo(sphere.x, sphere.y);
-                    g.lineTo(neighbor.x, neighbor.y);
-                  }}
+                <ConnectionGraphics
+                  key={connection.connectionKey}
+                  connectionKey={connection.connectionKey}
+                  sphere={sphere}
+                  connection={connection}
+                  neighbor={neighbor}
                 />
               );
             });
@@ -216,26 +196,26 @@ const TestComponent = ({ numSpheres = 5, maxNeighbors = 5 }) => {
           {Object.keys(spheres).map((key) => {
             const sphere = spheres[key];
             return (
-              <Graphics
+              <SphereGraphics
                 key={key}
-                draw={(g) => {
-                  g.clear();
-                  g.beginFill(0xff0000);
-                  g.drawCircle(0, 0, sphere.radius);
-                  g.endFill();
-                }}
-                x={sphere.x}
-                y={sphere.y}
-                filters={[blurFilter]}
-                interactive
-                pointerdown={(e) => handlePointerDown(key, e)}
+                sphereKey={key}
+                sphere={sphere}
+                handlePointerDown={handlePointerDown}
+                handleElementClick={handleElementClick}
+                blurFilter={blurFilter}
               />
             );
           })}
         </Container>
       </Stage>
+      <EditorPanel
+        selectedElement={selectedElement}
+        updateSphere={updateSphere}
+        updateConnection={updateConnection}
+        closeEditor={closeEditor}
+      />
     </FullScreenStage>
   );
 };
 
-export default TestComponent;
+export default Simulation;
