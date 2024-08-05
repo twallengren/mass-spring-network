@@ -9,12 +9,12 @@ import useWindowDimensions from '../utils/useWindowDimensions';
 import { initializeSpheres } from '../utils/sphereUtils';
 import { initializeConnections } from '../utils/connectionUtils';
 
-const Simulation = ({ numSpheres = 50, maxNeighbors = 3 }) => {
+const Simulation = ({ numSpheres = 20, maxNeighbors = 2 }) => {
   const blurFilter = useMemo(() => new BlurFilter(4), []);
   const dimensions = useWindowDimensions(window);
   const [draggedSphere, setDraggedSphere] = useState(null);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [selectedElement, setSelectedElement] = useState(null);
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
 
   const [spheres, setSpheres] = useState(() => initializeSpheres(numSpheres, dimensions.width, dimensions.height));
   const [connections, setConnections] = useState(() => initializeConnections(spheres, maxNeighbors));
@@ -26,34 +26,35 @@ const Simulation = ({ numSpheres = 50, maxNeighbors = 3 }) => {
 
         // Apply spring forces
         for (const key in connections) {
-          const sphere = newSpheres[key];
-          connections[key].forEach((connection) => {
-            const neighbor = newSpheres[connection.key];
-            const dx = neighbor.x - sphere.x;
-            const dy = neighbor.y - sphere.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-            const springForce = connection.springConstant * (distance - connection.length);
-            const fx = (springForce * dx) / distance;
-            const fy = (springForce * dy) / distance;
+          const sphereKeys = key.split(',');
+          const sphereA = newSpheres[sphereKeys[0]];
+          const sphereB = newSpheres[sphereKeys[1]];
 
-            // Calculate relative velocity
-            const relativeVx = neighbor.vx - sphere.vx;
-            const relativeVy = neighbor.vy - sphere.vy;
+          const dx = sphereB.x - sphereA.x;
+          const dy = sphereB.y - sphereA.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
 
-            // Apply damping force
-            const dampingForceX = connection.dampingConstant * relativeVx;
-            const dampingForceY = connection.dampingConstant * relativeVy;
+          const connection = connections[key];
+          const springForce = connection.springConstant * (distance - connection.length);
+          const fx = (springForce * dx) / distance;
+          const fy = (springForce * dy) / distance;
 
-            // Total force
-            const totalFx = fx + dampingForceX;
-            const totalFy = fy + dampingForceY;
+          // Calculate relative velocity
+          const relativeVx = sphereB.vx - sphereA.vx;
+          const relativeVy = sphereB.vy - sphereA.vy;
 
-            // Update velocities considering masses
-            sphere.vx += totalFx / sphere.mass;
-            sphere.vy += totalFy / sphere.mass;
-            neighbor.vx -= totalFx / neighbor.mass;
-            neighbor.vy -= totalFy / neighbor.mass;
-          });
+          // Apply damping force
+          const dampingForceX = connection.dampingConstant * relativeVx;
+          const dampingForceY = connection.dampingConstant * relativeVy;
+
+          // Total force
+          const totalFx = fx + dampingForceX;
+          const totalFy = fy + dampingForceY;
+
+          sphereA.vx += totalFx / sphereA.mass;
+          sphereA.vy += totalFy / sphereA.mass;
+          sphereB.vx -= totalFx / sphereB.mass;
+          sphereB.vy -= totalFy / sphereB.mass;
         }
 
         // Update positions and handle wall collisions
@@ -62,6 +63,9 @@ const Simulation = ({ numSpheres = 50, maxNeighbors = 3 }) => {
 
           // Skip updating position if the sphere is being dragged
           if (draggedSphere === key) continue;
+
+          // Skip updating position if the sphere is locked
+          if (sphere.locked) continue;
 
           let newX = sphere.x + sphere.vx;
           let newY = sphere.y + sphere.vy;
@@ -100,10 +104,6 @@ const Simulation = ({ numSpheres = 50, maxNeighbors = 3 }) => {
 
   const handlePointerDown = (key, event) => {
     setDraggedSphere(key);
-    setDragOffset({
-      x: event.clientX - spheres[key].x,
-      y: event.clientY - spheres[key].y,
-    });
   };
 
   const handlePointerMove = (event) => {
@@ -112,10 +112,10 @@ const Simulation = ({ numSpheres = 50, maxNeighbors = 3 }) => {
         ...prevSpheres,
         [draggedSphere]: {
           ...prevSpheres[draggedSphere],
-          x: event.clientX - dragOffset.x,
-          y: event.clientY - dragOffset.y,
-          vx: 0, // Reset velocity while dragging
-          vy: 0, // Reset velocity while dragging
+          x: event.clientX,
+          y: event.clientY,
+          vx: 0, // Ensure velocity is reset while dragging
+          vy: 0,
         },
       }));
     }
@@ -125,8 +125,18 @@ const Simulation = ({ numSpheres = 50, maxNeighbors = 3 }) => {
     setDraggedSphere(null);
   };
 
-  const handleElementClick = (key, type, element, connectionKey = null) => {
+  const handleElementClick = (key, type, element) => {
     setSelectedElement({ key, type, ...element });
+  };
+
+  const handleDoubleClick = (key) => {
+    setSpheres((prevSpheres) => ({
+      ...prevSpheres,
+      [key]: {
+        ...prevSpheres[key],
+        locked: !prevSpheres[key].locked, // Toggle locked state
+      },
+    }));
   };
 
   const updateSphere = (key, updatedValues) => {
@@ -140,19 +150,9 @@ const Simulation = ({ numSpheres = 50, maxNeighbors = 3 }) => {
     }));
   };
 
-  const updateConnection = (sphereKey, connectionKey, updatedValues) => {
-    setConnections((prevConnections) => ({
-      ...prevConnections,
-      [sphereKey]: prevConnections[sphereKey].map((connection) =>
-        connection.connectionKey === connectionKey
-          ? { ...connection, ...updatedValues }
-          : connection
-      ),
-    }));
-  };
-
   const closeEditor = () => {
     setSelectedElement(null);
+    setIsEditorOpen(false);
   };
 
   const handleStageClick = (event) => {
@@ -179,19 +179,17 @@ const Simulation = ({ numSpheres = 50, maxNeighbors = 3 }) => {
       <Stage width={dimensions.width} height={dimensions.height} options={{ backgroundColor: 0xffffff }}>
         <Container>
           {Object.keys(connections).map((key) => {
-            const sphere = spheres[key];
-            return connections[key].map((connection) => {
-              const neighbor = spheres[connection.key];
-              return (
-                <ConnectionGraphics
-                  key={connection.connectionKey}
-                  connectionKey={connection.connectionKey}
-                  sphere={sphere}
-                  connection={connection}
-                  neighbor={neighbor}
-                />
-              );
-            });
+            const sphereKeys = key.split(',');
+            const sphereA = spheres[sphereKeys[0]];
+            const sphereB = spheres[sphereKeys[1]];
+            return (
+              <ConnectionGraphics
+                key={key}
+                connectionKey={key}
+                sphereA={sphereA}
+                sphereB={sphereB}
+              />
+            );
           })}
           {Object.keys(spheres).map((key) => {
             const sphere = spheres[key];
@@ -202,18 +200,37 @@ const Simulation = ({ numSpheres = 50, maxNeighbors = 3 }) => {
                 sphere={sphere}
                 handlePointerDown={handlePointerDown}
                 handleElementClick={handleElementClick}
+                handleDoubleClick={handleDoubleClick}
                 blurFilter={blurFilter}
               />
             );
           })}
         </Container>
       </Stage>
-      <EditorPanel
-        selectedElement={selectedElement}
-        updateSphere={updateSphere}
-        updateConnection={updateConnection}
-        closeEditor={closeEditor}
-      />
+      <button
+        style={{
+          position: 'fixed',
+          bottom: '40px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          padding: '10px 20px',
+          backgroundColor: '#007bff',
+          color: 'white',
+          border: 'none',
+          borderRadius: '4px',
+          cursor: 'pointer',
+        }}
+        onClick={() => setIsEditorOpen(true)}
+      >
+        Open Editor
+      </button>
+      {isEditorOpen && (
+        <EditorPanel
+          selectedElement={selectedElement}
+          updateSphere={updateSphere}
+          closeEditor={closeEditor}
+        />
+      )}
     </FullScreenStage>
   );
 };

@@ -1,6 +1,6 @@
 import { Graphics } from '@pixi/react';
 
-const SphereGraphics = ({ sphereKey, sphere, handlePointerDown, handleElementClick, blurFilter }) => (
+const SphereGraphics = ({ sphereKey, sphere, handlePointerDown, handleElementClick, handleDoubleClick, blurFilter }) => (
   <Graphics
     draw={(g) => {
       g.clear();
@@ -11,9 +11,10 @@ const SphereGraphics = ({ sphereKey, sphere, handlePointerDown, handleElementCli
     x={sphere.x}
     y={sphere.y}
     filters={[blurFilter]}
-    eventMode='dynamic' // Update interactivity
+    eventMode='dynamic'
     pointerdown={(e) => handlePointerDown(sphereKey, e)}
     pointerup={() => handleElementClick(sphereKey, 'sphere', sphere)}
+    pointertap={(e) => e.detail === 2 && handleDoubleClick(sphereKey)}
   />
 );
 

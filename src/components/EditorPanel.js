@@ -1,6 +1,22 @@
 import React, { useState, useEffect } from 'react';
+import styled from '@emotion/styled';
 
-const EditorPanel = ({ selectedElement, updateSphere, updateConnection, closeEditor }) => {
+const PanelContainer = styled.div`
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 80%;
+  height: 30vh;
+  background-color: white;
+  padding: 20px;
+  border-top: 1px solid black;
+  overflow-y: auto;
+  box-shadow: 0 -10px 100px rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+`;
+
+const EditorPanel = ({ selectedElement, updateSphere, closeEditor }) => {
   const [formValues, setFormValues] = useState({});
 
   useEffect(() => {
@@ -10,60 +26,37 @@ const EditorPanel = ({ selectedElement, updateSphere, updateConnection, closeEdi
   }, [selectedElement]);
 
   const handleChange = (e) => {
-    const { name, value } = e.target;
+    const { name, value, type, checked } = e.target;
     setFormValues((prevValues) => ({
       ...prevValues,
-      [name]: parseFloat(value),
+      [name]: type === 'checkbox' ? checked : parseFloat(value),
     }));
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (selectedElement.type === 'sphere') {
-      updateSphere(selectedElement.key, formValues);
-    } else if (selectedElement.type === 'connection') {
-      updateConnection(selectedElement.sphereKey, selectedElement.connectionKey, formValues);
-    }
+    updateSphere(selectedElement.key, formValues);
     closeEditor();
   };
 
-  if (!selectedElement) return null;
-
   return (
-    <div style={{ position: 'absolute', top: '10px', right: '10px', backgroundColor: 'white', padding: '10px', border: '1px solid black' }}>
-      <h3>Edit {selectedElement.type}</h3>
+    <PanelContainer>
+      <h3>Edit</h3>
       <form onSubmit={handleSubmit}>
-        {selectedElement.type === 'sphere' ? (
-          <>
-            <label>
-              Mass:
-              <input type="number" name="mass" value={formValues.mass || ''} onChange={handleChange} />
-            </label>
-            <br />
-          </>
-        ) : (
-          <>
-            <label>
-              Length:
-              <input type="number" name="length" value={formValues.length || ''} onChange={handleChange} />
-            </label>
-            <br />
-            <label>
-              Spring Constant:
-              <input type="number" name="springConstant" value={formValues.springConstant || ''} onChange={handleChange} />
-            </label>
-            <br />
-            <label>
-              Damping Constant:
-              <input type="number" name="dampingConstant" value={formValues.dampingConstant || ''} onChange={handleChange} />
-            </label>
-          </>
-        )}
+        <label>
+          Mass:
+          <input type="number" name="mass" value={formValues.mass || ''} onChange={handleChange} />
+        </label>
+        <br />
+        <label>
+          Lock:
+          <input type="checkbox" name="locked" checked={formValues.locked || false} onChange={handleChange} />
+        </label>
         <br />
         <button type="submit">Save</button>
         <button type="button" onClick={closeEditor}>Cancel</button>
       </form>
-    </div>
+    </PanelContainer>
   );
 };
 

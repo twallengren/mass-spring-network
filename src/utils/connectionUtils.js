@@ -8,22 +8,26 @@ export const initializeConnections = (spheres, maxNeighbors) => {
 
   sphereKeys.forEach((key, i) => {
     const sphere = spheres[key];
-    const distances = sphereKeys
+    const closestNeighbors = sphereKeys
       .filter((_, j) => i !== j)
       .map((otherKey) => ({
         key: otherKey,
         distance: calculateDistance(sphere, spheres[otherKey]),
       }))
       .sort((a, b) => a.distance - b.distance)
-      .slice(0, Math.floor(Math.random() * maxNeighbors) + 1);
+      .slice(0, Math.floor(Math.random() * maxNeighbors) + 1)
+      .map(k => k.key);
 
-    initialConnections[key] = distances.map((d, index) => ({
-      connectionKey: `${key}_${index}`,
-      key: d.key,
-      length: d.distance,
-      springConstant: Math.random() * 0.001 + 0.0001,
-      dampingConstant: Math.random() * 0.001 + 0.001,
-    }));
+    for (const neighborKey of closestNeighbors) {
+      const connectionKey = key < neighborKey ? `${key},${neighborKey}` : `${neighborKey},${key}`;
+      initialConnections[connectionKey] = {
+        connectionKey,
+        key: connectionKey,
+        length: Math.random() * 2 * calculateDistance(sphere, spheres[neighborKey]),
+        springConstant: Math.random() * 0.001 + 0.0001,
+        dampingConstant: Math.random() * 0.001 + 0.001,
+      };
+    }
   });
 
   return initialConnections;
