@@ -1,9 +1,9 @@
-import TestComponent from './components/TestComponent';
+import Simulation from './components/Simulation';
 
 function App() {
   return (
     <div className="App">
-      <TestComponent />
+      <Simulation />
     </div>
   );
 }
